@@ -148,47 +148,134 @@ class WhisperContext private constructor(private var ptr: Long) {
 }
 ```
 
-### **الخطوة 4: استخدام الكود في `MainActivity`**
+### **الخطوة 4: استخدام الكود في `MainActivity` (استخراج النص من الصوت)**
+
+هذا القسم يوضح كيفية استخدام المكتبة لاستخراج النص من ملف صوتي يختاره المستخدم.
+
+#### **أ. إعداد ملف النموذج (`.bin`)**
+
+1.  **تنزيل النموذج:** قم بتنزيل نموذج Whisper الذي تفضله (مثل `ggml-tiny.bin`) من [صفحة نماذج Whisper.cpp الرسمية](https://github.com/ggerganov/whisper.cpp#models).
+2.  **إضافة إلى المشروع:** ضع ملف النموذج الذي قمت بتنزيله داخل مجلد `app/src/main/assets`.
+
+#### **ب. كود `MainActivity.kt`**
+
+سنستخدم `CoroutineScope` لتشغيل عملية النسخ الصوتي في خلفية التطبيق لتجنب تجميد واجهة المستخدم.
 
 ```kotlin
-import com.whispercpp.whisper.WhisperContext
+import android.os.Bundle
 import android.util.Log
+import androidx.appcompat.app.AppCompatActivity
+import com.whispercpp.whisper.WhisperContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
+
+    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+    private lateinit var modelPath: String
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+        setContentView(R.layout.activity_main) // تأكد من وجود ملف تخطيط
+
         // 1. اختبار JNI (يجب أن يعمل الآن)
         val info = WhisperContext.getSystemInfo()
         Log.d("Whisper", "System Info: $info")
 
-        // 2. مثال على استخدام النسخ الصوتي
-        // ملاحظة: يجب عليك توفير ملف النموذج (ggml-tiny.bin مثلاً) في مجلد assets
-        val modelPath = "path/to/your/ggml-model.bin" 
+        // 2. نسخ ملف النموذج من Assets إلى مسار يمكن الوصول إليه
+        modelPath = copyAssetToCache("ggml-tiny.bin") // اسم ملف النموذج في مجلد assets
+
+        // 3. بدء عملية النسخ الصوتي (كمثال)
+        // يجب استبدال هذا بآلية اختيار ملف صوتي من قبل المستخدم
+        val audioFilePath = "path/to/your/audio.wav" // يجب أن يكون ملف صوتي بصيغة WAV
         
-        try {
-            val context = WhisperContext.createContext(modelPath)
-            
-            // 3. قم بتحميل بيانات الصوت الخاصة بك هنا (يجب أن تكون FloatArray)
-            val audioData: FloatArray = loadYourAudioData() 
-            
-            val transcription = context.transcribeData(audioData)
-            Log.i("Whisper", "Transcription Result: $transcription")
-            
-            context.release()
-        } catch (e: Exception) {
-            Log.e("Whisper", "Error during transcription", e)
+        coroutineScope.launch {
+            transcribeAudio(audioFilePath)
         }
     }
-    
-    // دالة مساعدة (يجب عليك تنفيذها)
-    private fun loadYourAudioData(): FloatArray {
-        // يجب أن تقوم بتحميل ملف صوتي وتحويله إلى FloatArray (16kHz, mono)
-        return FloatArray(0) 
+
+    // ---------------------------------------------------------------------
+    // الدوال المساعدة
+    // ---------------------------------------------------------------------
+
+    // دالة لنسخ ملف النموذج من assets إلى مجلد cache
+    private fun copyAssetToCache(assetName: String): String {
+        val cacheFile = File(cacheDir, assetName)
+        if (!cacheFile.exists()) {
+            try {
+                assets.open(assetName).use { inputStream ->
+                    FileOutputStream(cacheFile).use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("Whisper", "Failed to copy asset $assetName", e)
+                throw e
+            }
+        }
+        return cacheFile.absolutePath
+    }
+
+    // دالة لتحميل ملف صوتي وتحويله إلى FloatArray
+    // **ملاحظة:** تتطلب هذه الدالة أن يكون ملف الصوت بصيغة WAV أحادي القناة (Mono) بمعدل 16kHz
+    private fun loadAudioFile(filePath: String): FloatArray {
+        val file = File(filePath)
+        // يجب عليك استخدام مكتبة متخصصة (مثل MediaCodec أو WavFile) لقراءة ملف WAV
+        // هذا مجرد مثال مبسط (قد لا يعمل مع جميع ملفات WAV)
+        // يجب أن تقوم بقراءة بيانات PCM وتحويلها إلى FloatArray
+        
+        // مثال على تحويل بيانات PCM (16-bit) إلى FloatArray
+        // (هذا الجزء يتطلب تنفيذاً دقيقاً لقراءة ملف WAV)
+        
+        // لغرض الاختبار، سنفترض أن لديك دالة تقوم بذلك
+        // return convertWavToFloatArray(file)
+        
+        // لغرض التوثيق، نتركها فارغة مع تنبيه
+        Log.w("Whisper", "loadAudioFile needs proper WAV file parsing and conversion to 16kHz mono FloatArray.")
+        return FloatArray(0) // يجب استبدالها بالبيانات الصوتية الفعلية
+    }
+
+    // دالة النسخ الصوتي الرئيسية
+    private suspend fun transcribeAudio(audioFilePath: String) {
+        var context: WhisperContext? = null
+        try {
+            // 1. تحميل النموذج وتهيئة السياق
+            context = WhisperContext.createContext(modelPath)
+            Log.i("Whisper", "Context created successfully.")
+
+            // 2. تحميل بيانات الصوت
+            val audioData = loadAudioFile(audioFilePath)
+            if (audioData.isEmpty()) {
+                Log.e("Whisper", "Audio data is empty. Cannot transcribe.")
+                return
+            }
+
+            // 3. بدء عملية النسخ
+            val transcription = context.transcribeData(audioData)
+            
+            // 4. عرض النتيجة
+            Log.i("Whisper", "Transcription Result: $transcription")
+
+        } catch (e: Exception) {
+            Log.e("Whisper", "Error during transcription", e)
+        } finally {
+            // 5. تحرير الموارد
+            context?.release()
+        }
     }
 }
 ```
 
-## ⚠️ ملف النموذج (BIN)
+## ⚠️ ملاحظات هامة حول ملف الصوت
 
-**المكتبة لا تتضمن نموذج الذكاء الاصطناعي.** يجب عليك تنزيل نموذج `ggml-*.bin` (مثل `ggml-tiny.bin`) ووضعه في مجلد `assets` في مشروعك وتوفير مساره في `modelPath`.
+*   **الصيغة المطلوبة:** تتوقع مكتبة `whisper.cpp` بيانات صوتية خام (Raw Audio Data) في صيغة **FloatArray**، بمعدل أخذ عينات (Sample Rate) يبلغ **16000 هرتز (16kHz)**، و **أحادية القناة (Mono)**.
+*   **تنفيذ `loadAudioFile`:** يجب عليك تنفيذ الدالة `loadAudioFile` بنفسك باستخدام مكتبة خارجية أو كود مخصص لقراءة ملف WAV أو MP3 الذي يختاره المستخدم وتحويله إلى الصيغة المطلوبة (16kHz Mono FloatArray).
+
+---
+**تم تحديث ملف `README.md` بهذه التفاصيل.**
