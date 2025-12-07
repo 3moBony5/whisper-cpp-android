@@ -112,17 +112,32 @@ class WhisperContext private constructor(private var ptr: Long) {
 
     fun transcribeData(audioData: FloatArray, numThreads: Int = 4): String {
         require(ptr != 0L) { "سياق Whisper غير مهيأ أو تم تحريره." }
-        WhisperLib.fullTranscribe(ptr, numThreads, audioData)
-        
-        val textCount = WhisperLib.getTextSegmentCount(ptr)
-        return buildString {
-            for (i in 0 until textCount) {
-                append(WhisperLib.getTextSegment(ptr, i))
-            }
-        }
+        return transcribeInternal(audioData, numThreads)
     }
 
-    fun release() {
+    fun transcribeWavFile(filePath: String, numThreads: Int = 4): String {
+        require(ptr != 0L) { "سياق Whisper غير مهيأ أو تم تحريره." }
+        val audioData = readWavFile(filePat	    fun transcribeData(audioData: FloatArray, numThreads: Int = 4): String {
+	        require(ptr != 0L) { "سياق Whisper غير مهيأ أو تم تحريره." }
+	        return transcribeInternal(audioData, numThreads)
+	    }
+
+	    fun transcribeWavFile(filePath: String, numThreads: Int = 4): String {
+	        require(ptr != 0L) { "سياق Whisper غير مهيأ أو تم تحريره." }
+	        val audioData = readWavFile(filePath)
+	        return transcribeInternal(audioData, numThreads)
+	    }
+
+	    private fun transcribeInternal(audioData: FloatArray, numThreads: Int): String {
+	        WhisperLib.fullTranscribe(ptr, numThreads, audioData)
+	        
+	        val textCount = WhisperLib.getTextSegmentCount(ptr)
+	        return buildString {
+	            for (i in 0 until textCount) {
+	                append(WhisperLib.getTextSegment(ptr, i))
+	            }
+	        }
+	    } fun release() {
         if (ptr != 0L) {
             WhisperLib.freeContext(ptr)
             ptr = 0
@@ -171,80 +186,62 @@ class MainActivity : AppCompatActivity() {
         // 1. نسخ ملف النموذج من Assets إلى مسار يمكن الوصول إليه
         modelPath = copyAssetToCache("ggml-tiny.bin") 
 
-        // 2. بدء عملية النسخ الصوتي (يجب استبدال هذا بآلية اختيار ملف صوتي)
-        val audioFilePath = "path/to/user/selected/audio.wav" 
-        
-        coroutineScope.launch {
-            transcribeAudio(audioFilePath)
-        }
-    }
-
-    // ---------------------------------------------------------------------
-    // الدوال المساعدة
-    // ---------------------------------------------------------------------
-
-    /**
-     * ينسخ ملف النموذج من مجلد assets إلى مجلد cache الخاص بالتطبيق.
-     */
-    private fun copyAssetToCache(assetName: String): String {
-        val cacheFile = File(cacheDir, assetName)
-        if (!cacheFile.exists()) {
-            try {
-                assets.open(assetName).use { inputStream: InputStream ->
-                    FileOutputStream(cacheFile).use { outputStream ->
-                        inputStream.copyTo(outputStream)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("Whisper", "فشل في نسخ النموذج من Assets.", e)
-                throw e
-            }
-        }
-        return cacheFile.absolutePath
-    }
-
-    /**
-     * يحمل ملف صوتي ويحوله إلى FloatArray.
-     * ⚠️ يجب أن يكون الصوت بصيغة 16kHz Mono FloatArray.
-     */
-    private fun loadAudioFile(filePath: String): FloatArray {
-        // يجب على المطور تنفيذ هذا الجزء باستخدام مكتبة خارجية لقراءة ملف WAV/MP3
-        // وتحويله إلى الصيغة المطلوبة (16kHz, Mono, FloatArray).
-        Log.w("Whisper", "⚠️ يجب تنفيذ دالة loadAudioFile لتحويل ملف الصوت إلى 16kHz Mono FloatArray.")
-        return FloatArray(0) 
-    }
-
-    /**
-     * دالة النسخ الصوتي الرئيسية التي تعمل في خلفية التطبيق.
-     */
-    private suspend fun transcribeAudio(audioFilePath: String) {
-        var context: WhisperContext? = null
-        try {
-            // 1. تحميل النموذج وتهيئة السياق
-            context = WhisperContext.createContext(modelPath)
-            Log.i("Whisper", "تم تهيئة سياق Whisper بنجاح.")
-
-            // 2. تحميل بيانات الصوت
-            val audioData = loadAudioFile(audioFilePath)
-            if (audioData.isEmpty()) {
-                Log.e("Whisper", "بيانات الصوت فارغة. لا يمكن إجراء النسخ.")
-                return
-            }
-
-            // 3. بدء عملية النسخ
-            val transcription = context.transcribeData(audioData)
-            
-            // 4. عرض النتيجة
-            Log.i("Whisper", "نتيجة النسخ: $transcription")
-
-        } catch (e: Exception) {
-            Log.e("Whisper", "حدث خطأ أثناء عملية النسخ.", e)
-        } finally {
-            // 5. تحرير الموارد
-            context?.release()
-        }
-    }
-}
+	        // 2. بدء عملية النسخ الصوتي (يجب استبدال هذا بآلية اختيار ملف صوتي)
+	        val audioFilePath = "path/to/user/selected/audio.wav" 
+	        
+	        coroutineScope.launch {
+	            transcribeAudio(audioFilePath)
+	        }
+	    }
+	
+	    // ---------------------------------------------------------------------
+	    // الدوال المساعدة
+	    // ---------------------------------------------------------------------
+	
+	    /**
+	     * ينسخ ملف النموذج من مجلد assets إلى مجلد cache الخاص بالتطبيق.
+	     */
+	    private fun copyAssetToCache(assetName: String): String {
+	        val cacheFile = File(cacheDir, assetName)
+	        if (!cacheFile.exists()) {
+	            try {
+	                assets.open(assetName).use { inputStream: InputStream ->
+	                    FileOutputStream(cacheFile).use { outputStream ->
+	                        inputStream.copyTo(outputStream)
+	                    }
+	                }
+	            } catch (e: Exception) {
+	                Log.e("Whisper", "فشل في نسخ النموذج من Assets.", e)
+	                throw e
+	            }
+	        }
+	        return cacheFile.absolutePath
+	    }
+	
+	    /**
+	     * دالة النسخ الصوتي الرئيسية التي تعمل في خلفية التطبيق.
+	     */
+	    private suspend fun transcribeAudio(audioFilePath: String) {
+	        var context: WhisperContext? = null
+	        try {
+	            // 1. تحميل النموذج وتهيئة السياق
+	            context = WhisperContext.createContext(modelPath)
+	            Log.i("Whisper", "تم تهيئة سياق Whisper بنجاح.")
+	
+	            // 2. بدء عملية النسخ باستخدام ملف WAV مباشرة
+	            val transcription = context.transcribeWavFile(audioFilePath)
+	            
+	            // 3. عرض النتيجة
+	            Log.i("Whisper", "نتيجة النسخ: $transcription")
+	
+	        } catch (e: Exception) {
+	            Log.e("Whisper", "حدث خطأ أثناء عملية النسخ.", e)
+	        } finally {
+	            // 4. تحرير الموارد
+	            context?.release()
+	        }
+	    }
+	}
 ```
 
 ## 🛠️ البناء من المصدر (Build from Source)
@@ -276,4 +273,5 @@ class MainActivity : AppCompatActivity() {
 ## ⚠️ ملاحظات هامة حول ملف الصوت
 
 *   **الصيغة المطلوبة:** تتوقع مكتبة `whisper.cpp` بيانات صوتية خام (Raw Audio Data) في صيغة **FloatArray**، بمعدل أخذ عينات (Sample Rate) يبلغ **16000 هرتز (16kHz)**، و **أحادية القناة (Mono)**.
-*   **تنفيذ `loadAudioFile`:** يجب عليك تنفيذ الدالة `loadAudioFile` بنفسك باستخدام مكتبة خارجية أو كود مخصص لقراءة ملف WAV أو MP3 الذي يختاره المستخدم وتحويله إلى الصيغة المطلوبة (16kHz Mono FloatArray).
+	*   **ملفات WAV:** يمكنك استخدام الدالة المساعدة `transcribeWavFile(filePath: String)` لنسخ ملفات WAV مباشرة. هذه الدالة تقوم بتحويل ملف WAV إلى الصيغة المطلوبة (16kHz Mono FloatArray) داخليًا.
+	*   **ملفات أخرى:** لملفات الصوت الأخرى (مثل MP3)، ستحتاج إلى تنفيذ دالة تحويل خارجية إلى FloatArray بنفسك، ثم استخدام الدالة `transcribeData(audioData: FloatArray)`.

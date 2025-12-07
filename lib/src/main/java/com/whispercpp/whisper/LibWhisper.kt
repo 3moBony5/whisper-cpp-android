@@ -17,12 +17,21 @@ class WhisperContext private constructor(private var ptr: Long) {
     )
 
     suspend fun transcribeData(data: FloatArray, printTimestamp: Boolean = true): String = withContext(scope.coroutineContext) {
+        return@withContext transcribeInternal(data, printTimestamp)
+    }
+
+    suspend fun transcribeWavFile(filePath: String, printTimestamp: Boolean = true): String = withContext(scope.coroutineContext) {
+        val audioData = readWavFile(filePath)
+        return@withContext transcribeInternal(audioData, printTimestamp)
+    }
+
+    private fun transcribeInternal(data: FloatArray, printTimestamp: Boolean): String {
         require(ptr != 0L)
         val numThreads = WhisperCpuConfig.preferredThreadCount
         Log.d(LOG_TAG, "Selecting $numThreads threads")
         WhisperLib.fullTranscribe(ptr, numThreads, data)
         val textCount = WhisperLib.getTextSegmentCount(ptr)
-        return@withContext buildString {
+        return buildString {
             for (i in 0 until textCount) {
                 if (printTimestamp) {
                     val textTimestamp = "[${toTimestamp(WhisperLib.getTextSegmentT0(ptr, i))} --> ${toTimestamp(WhisperLib.getTextSegmentT1(ptr, i))}]"
