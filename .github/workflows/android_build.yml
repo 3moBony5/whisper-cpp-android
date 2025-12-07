@@ -1,0 +1,53 @@
+name: Android AAR Build
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true # Ensure submodules are checked out
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK and NDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          ndk: 25.2.9519653 # Match the version used in build.gradle
+          
+      - name: Grant execute permission for gradlew
+        run: chmod +x lib/gradlew
+
+      - name: Build AAR
+        run: |
+          cd lib
+          ./gradlew assembleRelease
+
+      - name: Upload AAR to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-cpp-android-aar
+          path: lib/build/outputs/aar/lib-release.aar
+          
+      - name: Create Release (Optional - for manual release)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: lib/build/outputs/aar/lib-release.aar
+          name: Release ${{ github.ref_name }}
+          body: Automated release of whisper-cpp-android AAR.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
