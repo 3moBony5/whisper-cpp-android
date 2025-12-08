@@ -16,16 +16,52 @@ class WhisperContext private constructor(private var ptr: Long) {
         Executors.newSingleThreadExecutor().asCoroutineDispatcher()
     )
 
-    suspend fun transcribeData(data: FloatArray, printTimestamp: Boolean = true): String = withContext(scope.coroutineContext) {
-        return@withContext transcribeInternal(data, printTimestamp)
+    /**
+     * Transcribes the given audio data.
+     * @param data The audio data as a FloatArray (16kHz, Mono).
+     * @param printSegmentTimestamp If true, prints segment-level timestamps.
+     * @return The full transcribed text with optional segment timestamps.
+     */
+    suspend fun transcribeData(data: FloatArray, printSegmentTimestamp: Boolean = true): String = withContext(scope.coroutineContext) {
+        return@withContext transcribeInternal(data, printSegmentTimestamp)
     }
 
-    suspend fun transcribeWavFile(filePath: String, printTimestamp: Boolean = true): String = withContext(scope.coroutineContext) {
+    /**
+     * Transcribes a WAV file directly.
+     * @param filePath The path to the WAV file.
+     * @param printSegmentTimestamp If true, prints segment-level timestamps.
+     * @return The full transcribed text with optional segment timestamps.
+     */
+    suspend fun transcribeWavFile(filePath: String, printSegmentTimestamp: Boolean = true): String = withContext(scope.coroutineContext) {
         val audioData = readWavFile(filePath)
-        return@withContext transcribeInternal(audioData, printTimestamp)
+        return@withContext transcribeInternal(audioData, printSegmentTimestamp)
     }
 
-    private fun transcribeInternal(data: FloatArray, printTimestamp: Boolean): String {
+    /**
+     * Retrieves word-level timestamps for the last transcription.
+     * @return A list of Word objects containing text, start time (ms), and end time (ms).
+     */
+    fun getWordTimestamps(): List<Word> {
+        require(ptr != 0L) { "Whisper context is not initialized." }
+        val words = mutableListOf<Word>()
+        val segmentCount = WhisperLib.getTextSegmentCount(ptr)
+
+        for (i in 0 until segmentCount) {
+            val tokenCount = WhisperLib.getTextSegmentTokensCount(ptr, i)
+            for (j in 0 until tokenCount) {
+                val text = WhisperLib.getTokenText(ptr, i, j).trim()
+                val t0 = WhisperLib.getTokenT0(ptr, i, j)
+                val t1 = WhisperLib.getTokenT1(ptr, i, j)
+
+                if (text.isNotEmpty()) {
+                    words.add(Word(text, t0 * 10, t1 * 10)) // Convert to milliseconds
+                }
+            }
+        }
+        return words
+    }
+
+    private fun transcribeInternal(data: FloatArray, printSegmentTimestamp: Boolean): String {
         require(ptr != 0L)
         val numThreads = WhisperCpuConfig.preferredThreadCount
         Log.d(LOG_TAG, "Selecting $numThreads threads")
@@ -33,7 +69,7 @@ class WhisperContext private constructor(private var ptr: Long) {
         val textCount = WhisperLib.getTextSegmentCount(ptr)
         return buildString {
             for (i in 0 until textCount) {
-                if (printTimestamp) {
+                if (printSegmentTimestamp) {
                     val textTimestamp = "[${toTimestamp(WhisperLib.getTextSegmentT0(ptr, i))} --> ${toTimestamp(WhisperLib.getTextSegmentT1(ptr, i))}]"
                     val textSegment = WhisperLib.getTextSegment(ptr, i)
                     append("$textTimestamp: $textSegment\n")
@@ -98,6 +134,12 @@ class WhisperContext private constructor(private var ptr: Long) {
     }
 }
 
+data class Word(
+    val text: String,
+    val startTimeMs: Long,
+    val endTimeMs: Long
+)
+
 private class WhisperLib {
     companion object {
         init {
@@ -148,6 +190,13 @@ private class WhisperLib {
         external fun getTextSegment(contextPtr: Long, index: Int): String
         external fun getTextSegmentT0(contextPtr: Long, index: Int): Long
         external fun getTextSegmentT1(contextPtr: Long, index: Int): Long
+
+        // Word-level Timestamps
+        external fun getTextSegmentTokensCount(contextPtr: Long, index: Int): Int
+        external fun getTokenText(contextPtr: Long, segmentIndex: Int, tokenIndex: Int): String
+        external fun getTokenT0(contextPtr: Long, segmentIndex: Int, tokenIndex: Int): Long
+        external fun getTokenT1(contextPtr: Long, segmentIndex: Int, tokenIndex: Int): Long
+
         external fun getSystemInfo(): String
         external fun benchMemcpy(nthread: Int): String
         external fun benchGgmlMulMat(nthread: Int): String

@@ -174,6 +174,7 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_fullTranscribe(
     params.print_realtime = true;
     params.print_progress = false;
     params.print_timestamps = true;
+    params.word_timestamps = true;
     params.print_special = false;
     params.translate = false;
     params.language = "en";
@@ -226,6 +227,40 @@ Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTextSegmentT1(
     UNUSED(thiz);
     struct whisper_context *context = (struct whisper_context *) context_ptr;
     return whisper_full_get_segment_t1(context, index);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTextSegmentTokensCount(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint index) {
+    UNUSED(thiz);
+    struct whisper_context *context = (struct whisper_context *) context_ptr;
+    return whisper_full_n_tokens(context, index);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTokenText(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint segment_index, jint token_index) {
+    UNUSED(thiz);
+    struct whisper_context *context = (struct whisper_context *) context_ptr;
+    const char *text = whisper_full_get_token_text(context, segment_index, token_index);
+    jstring string = (*env)->NewStringUTF(env, text);
+    return string;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTokenT0(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint segment_index, jint token_index) {
+    UNUSED(thiz);
+    struct whisper_context *context = (struct whisper_context *) context_ptr;
+    return whisper_full_get_token_t0(context, segment_index, token_index);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_whispercpp_whisper_WhisperLib_00024Companion_getTokenT1(
+        JNIEnv *env, jobject thiz, jlong context_ptr, jint segment_index, jint token_index) {
+    UNUSED(thiz);
+    struct whisper_context *context = (struct whisper_context *) context_ptr;
+    return whisper_full_get_token_t1(context, segment_index, token_index);
 }
 
 JNIEXPORT jstring JNICALL

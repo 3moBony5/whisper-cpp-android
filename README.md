@@ -42,6 +42,10 @@ dependencies {
 
 ### **الخطوة 3: إعداد فئات الواجهة (JNI)**
 
+**ملاحظة هامة:** هذه المكتبة تدعم الآن **توقيت الكلمات الدقيق (Word-Level Timestamps)** لإنشاء ملفات SRT.
+
+لضمان عمل استدعاءات JNI بشكل صحيح وتجنب خطأ `UnsatisfiedLinkError`، يجب أن تتطابق أسماء الحزم والفئات مع ما تم استخدامه في بناء المكتبة الأصلية.
+
 لضمان عمل استدعاءات JNI بشكل صحيح وتجنب خطأ `UnsatisfiedLinkError`، يجب أن تتطابق أسماء الحزم والفئات مع ما تم استخدامه في بناء المكتبة الأصلية.
 
 **اسم الحزمة المطلوب:** `com.whispercpp.whisper`
@@ -83,6 +87,12 @@ class WhisperLib {
 
         @JvmStatic
         external fun getTextSegment(contextPtr: Long, index: Int): String
+
+        // دوال توقيت الكلمات (Word-Level Timestamps)
+        external fun getTextSegmentTokensCount(contextPtr: Long, index: Int): Int
+        external fun getTokenText(contextPtr: Long, segmentIndex: Int, tokenIndex: Int): String
+        external fun getTokenT0(contextPtr: Long, segmentIndex: Int, tokenIndex: Int): Long
+        external fun getTokenT1(contextPtr: Long, segmentIndex: Int, tokenIndex: Int): Long
     }
 }
 ```
@@ -121,12 +131,49 @@ class WhisperContext private constructor(private var ptr: Long) {
 	    }
 
 	    fun release() {
-	        if (ptr != 0L) {
-	            WhisperLib.freeContext(ptr)
-	            ptr = 0
-	        }
-	    }
-}
+		        if (ptr != 0L) {
+		            WhisperLib.freeContext(ptr)
+		            ptr = 0
+		        }
+		    }
+
+        /**
+         * فئة بيانات لتمثيل كلمة واحدة مع توقيتاتها الدقيقة.
+         * @param text نص الكلمة.
+         * @param startTimeMs وقت البداية بالمللي ثانية.
+         * @param endTimeMs وقت النهاية بالمللي ثانية.
+         */
+        data class Word(
+            val text: String,
+            val startTimeMs: Long,
+            val endTimeMs: Long
+        )
+
+        /**
+         * استخراج توقيتات الكلمات الدقيقة من آخر عملية نسخ.
+         * @return قائمة بكائنات Word.
+         */
+        fun getWordTimestamps(): List<Word> {
+            require(ptr != 0L) { "سياق Whisper غير مهيأ أو تم تحريره." }
+            val words = mutableListOf<Word>()
+            val segmentCount = WhisperLib.getTextSegmentCount(ptr)
+
+            for (i in 0 until segmentCount) {
+                val tokenCount = WhisperLib.getTextSegmentTokensCount(ptr, i)
+                for (j in 0 until tokenCount) {
+                    val text = WhisperLib.getTokenText(ptr, i, j).trim()
+                    val t0 = WhisperLib.getTokenT0(ptr, i, j)
+                    val t1 = WhisperLib.getTokenT1(ptr, i, j)
+
+                    if (text.isNotEmpty()) {
+                        // يتم ضرب التوقيت في 10 للتحويل من centiseconds إلى milliseconds
+                        words.add(Word(text, t0 * 10, t1 * 10))
+                    }
+                }
+            }
+            return words
+        }
+	}
 ```
 
 ### **الخطوة 4: استخدام المكتبة لاستخراج النص من الصوت**
@@ -228,21 +275,74 @@ class MainActivity : AppCompatActivity() {
 		                Log.e("Whisper", "بيانات الصوت فارغة. لا يمكن إجراء النسخ.")
 		                return
 		            }
-		
-		            // 3. بدء عملية النسخ
-		            val transcription = context.transcribeData(audioData)
-		            
-		            // 4. عرض النتيجة
-		            Log.i("Whisper", "نتيجة النسخ: $transcription")
-		
-		        } catch (e: Exception) {
-		            Log.e("Whisper", "حدث خطأ أثناء عملية النسخ.", e)
-		        } finally {
-		            // 5. تحرير الموارد
-		            context?.release()
-		        }
-		    }
-		}        context?.release()
+				        // 3. بدء عملية النسخ
+			            val transcription = context.transcribeData(audioData)
+			            
+			            // 4. عرض النتيجة (نص عادي)
+			            Log.i("Whisper", "نتيجة النسخ: $transcription")
+
+                        // 5. استخراج توقيتات الكلمات الدقيقة
+                        val wordTimestamps = context.getWordTimestamps()
+                        Log.i("Whisper", "عدد الكلمات مع التوقيت: ${wordTimestamps.size}")
+                        
+                        // 6. مثال على إنشاء ملف SRT (دالة مساعدة)
+                        val srtContent = generateSrt(wordTimestamps)
+                        Log.i("Whisper", "محتوى SRT جاهز.")
+			
+			        } catch (e: Exception) {
+			            Log.e("Whisper", "حدث خطأ أثناء عملية النسخ.", e)
+			        } finally {
+			            // 7. تحرير الموارد
+			            context?.release()
+			        }
+			    }
+			
+			    /**
+                 * دالة مساعدة لتحويل قائمة الكلمات ذات التوقيت إلى تنسيق SRT.
+                 * يتم تجميع الكلمات في جملة واحدة لكل سطر SRT.
+                 */
+                private fun generateSrt(words: List<WhisperContext.Word>): String {
+                    val srtBuilder = StringBuilder()
+                    var srtIndex = 1
+                    var currentLine = ""
+                    var startTime = 0L
+                    var endTime = 0L
+                    val maxWordsPerLine = 8 // لتسهيل القراءة
+
+                    for ((index, word) in words.withIndex()) {
+                        if (currentLine.isEmpty()) {
+                            startTime = word.startTimeMs
+                        }
+                        
+                        currentLine += "${word.text} "
+                        endTime = word.endTimeMs
+
+                        if ((index + 1) % maxWordsPerLine == 0 || index == words.size - 1) {
+                            val start = formatTime(startTime)
+                            val end = formatTime(endTime)
+
+                            srtBuilder.append("$srtIndex\n")
+                            srtBuilder.append("$start --> $end\n")
+                            srtBuilder.append("${currentLine.trim()}\n\n")
+
+                            currentLine = ""
+                            srtIndex++
+                        }
+                    }
+                    return srtBuilder.toString()
+                }
+
+                /**
+                 * دالة مساعدة لتنسيق الوقت إلى تنسيق SRT (HH:MM:SS,mmm).
+                 */
+                private fun formatTime(ms: Long): String {
+                    val hours = ms / 3600000
+                    val minutes = (ms % 3600000) / 60000
+                    val seconds = (ms % 60000) / 1000
+                    val milliseconds = ms % 1000
+                    return String.format("%02d:%02d:%02d,%03d", hours, minutes, seconds, milliseconds)
+                }
+			}context?.release()
 		    }
 		}
 >>>>>>> 9cb6a49 (Feature: Add AudioUtils for direct WAV file transcription and update documentation.)
